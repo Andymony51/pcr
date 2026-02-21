@@ -101,6 +101,16 @@
   .stat-val { font-family: 'DM Mono', monospace; font-size: 1.4rem; font-weight: 700; color: var(--text); }
   .stat-val.gold { color: var(--accent); }
   
+  /* Chart Timeframe Controls */
+  .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
+  .tf-group { display: flex; gap: 4px; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 8px; border: 1px solid var(--border); }
+  .tf-btn {
+    background: transparent; border: none; color: var(--muted); padding: 6px 12px;
+    border-radius: 6px; font-family: 'Syne', sans-serif; font-size: 0.75rem; font-weight: 700; cursor: pointer; transition: all 0.2s;
+  }
+  .tf-btn:hover { color: var(--text); }
+  .tf-btn.active { background: var(--surface); color: var(--accent); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+
   .chart-wrapper {
     flex: 1; min-height: 300px; position: relative;
   }
@@ -182,6 +192,17 @@
           <span class="stat-val" id="valuation-display">--</span>
         </div>
       </div>
+      
+      <div class="chart-header">
+        <div class="stat-label">MARKET HISTORY</div>
+        <div class="tf-group">
+          <button class="tf-btn active" data-limit="50" onclick="setTimeframe(50)">Normal</button>
+          <button class="tf-btn" data-limit="150" onclick="setTimeframe(150)">Bigger</button>
+          <button class="tf-btn" data-limit="500" onclick="setTimeframe(500)">Really Big</button>
+          <button class="tf-btn" data-limit="0" onclick="setTimeframe(0)">Even Bigger</button>
+        </div>
+      </div>
+
       <div class="chart-wrapper">
         <canvas id="marketChart"></canvas>
       </div>
@@ -246,10 +267,14 @@
   let userPB = 0;
   
   // Market Variables
-  const TOTAL_SHARES = 700000;
+  const TOTAL_SHARES = 2000000;
   let currentValuation = 0;
   let currentSharePrice = 0;
+  
+  // Charting Variables
   let chartInstance = null;
+  let fullHistory = [];
+  let currentTimeframe = 50; // Default to 'Normal' (last 50 data points)
 
   // Local Portfolio Structure
   let portfolio = { shares: 0, invested: 0 }; 
@@ -300,11 +325,31 @@
       price: currentSharePrice
     });
 
-    // Keep history limited to last 50 opens so it doesn't get massive
-    if (history.length > 50) history = history.slice(history.length - 50);
+    // Expand local storage cap to 5000 so the bigger timeframes actually have history to show
+    if (history.length > 5000) history = history.slice(history.length - 5000);
     
     localStorage.setItem('pams_market_history', JSON.stringify(history));
-    drawChart(history);
+    fullHistory = history;
+    
+    // Draw chart based on active timeframe
+    setTimeframe(currentTimeframe);
+  }
+
+  function setTimeframe(limit) {
+    currentTimeframe = limit;
+    
+    // Update active button styles
+    document.querySelectorAll('.tf-btn').forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.dataset.limit) === limit || (limit === 0 && btn.dataset.limit === '0'));
+    });
+
+    // Filter data array based on button clicked
+    let displayData = fullHistory;
+    if (limit > 0 && fullHistory.length > limit) {
+      displayData = fullHistory.slice(fullHistory.length - limit);
+    }
+
+    drawChart(displayData);
   }
 
   function renderDashboard() {
@@ -327,7 +372,7 @@
     pnlEl.className = 'pnl-display ' + (pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'neutral');
   }
 
- async function executeTrade(type) {
+  async function executeTrade(type) {
     let newPB = userPB;
     
     if (type === 'buy') {
@@ -376,7 +421,7 @@
       userPB = Math.floor(newPB);
       localStorage.setItem(`pam_portfolio_${currentUser.id}`, JSON.stringify(portfolio));
       
-      // Refresh the global valuation
+      // Note: A trade changes the global valuation immediately! Refresh it.
       await fetchMarketData(); 
     } else {
       alert('Transaction failed due to server error: ' + error.message);
